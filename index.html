@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cosmetics Catalog</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    :root {
+      --bg: #f5f5f7;
+      --card-bg: #ffffff;
+      --text-main: #222222;
+      --text-muted: #666666;
+      --accent: #0b9b7a;
+      --radius-lg: 16px;
+      --radius-md: 10px;
+      --shadow-soft: 0 8px 20px rgba(0, 0, 0, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+      background: var(--bg);
+      color: var(--text-main);
+    }
+
+    .page {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      margin: 0 0 8px;
+    }
+
+    .subtitle {
+      margin-bottom: 24px;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .status {
+      margin-bottom: 12px;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    .category-section {
+      margin-top: 32px;
+    }
+
+    .category-title {
+      font-size: 1.3rem;
+      margin: 0 0 12px;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 4px;
+      text-transform: capitalize;
+    }
+
+    .product-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 18px;
+    }
+
+    .product-card {
+      background: var(--card-bg);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-soft);
+      padding: 12px 12px 14px;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .product-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.08);
+    }
+
+    .image-wrapper {
+      position: relative;
+      width: 100%;
+      padding-top: 100%; /* 1:1 square */
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: #e5e5e5;
+    }
+
+    .image-wrapper img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .product-meta {
+      margin-top: 10px;
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+
+    .brand-line {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+
+    .name-ko {
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .name-en {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .price {
+      font-weight: 700;
+      color: var(--accent);
+      font-size: 0.95rem;
+    }
+
+    @media (max-width: 600px) {
+      h1 { font-size: 1.4rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>Skincare Catalog</h1>
+    <div class="subtitle">
+      Loaded automatically from Google Sheets, grouped by category.
+    </div>
+    <div id="status" class="status">Loading products…</div>
+
+    <!-- All category sections will be injected here -->
+    <div id="category-container"></div>
+  </main>
+
+  <script>
+    // === CONFIG ===
+    const SHEET_ID = "1BELIO9ts3jUrO4bgeSwVvdIOVGcrm5kmINIeqomRKZY";
+    const SHEET_NAME = "Sheet1";
+
+    const SHEET_URL =
+      `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq` +
+      `?sheet=${encodeURIComponent(SHEET_NAME)}&tqx=out:json`;
+
+    const containerEl = document.getElementById("category-container");
+    const statusEl = document.getElementById("status");
+
+    async function loadSheetData() {
+      try {
+        console.log("Fetching sheet from:", SHEET_URL);
+        const res = await fetch(SHEET_URL);
+        const text = await res.text();
+
+        const jsonStr = text.substring(text.indexOf("{"), text.lastIndexOf("}") + 1);
+        const data = JSON.parse(jsonStr);
+
+        const cols = data.table.cols.map((c) => c.label);
+        const rows = data.table.rows;
+
+        const items = rows.map((row, rowIndex) => {
+          const obj = {};
+          row.c.forEach((cell, idx) => {
+            const header = cols[idx];
+            obj[header] = cell ? cell.v : "";
+          });
+          return obj;
+        });
+
+        console.log("Parsed Rows as JS Objects:", items);
+        return items;
+      } catch (err) {
+        console.error("Error loading sheet:", err);
+        statusEl.textContent = "Failed to load data from Google Sheets.";
+        throw err;
+      }
+    }
+
+    function renderProducts(rows) {
+      containerEl.innerHTML = "";
+      let totalCount = 0;
+
+      // Group by category; forward-fill blank category cells (from merged cells)
+      const byCategory = new Map();
+      let lastCategory = "Uncategorized";
+
+      rows.forEach((r) => {
+        const rawCat = r["Category"] || r["category"] || "";
+        if (rawCat) {
+          lastCategory = rawCat;
+        }
+        const category = lastCategory || "Uncategorized";
+
+        const brand = r["Brand Name"] || r["brand"] || "";
+        const koreanName = r["korean"] || r["Korean"] || "";
+        const englishName =
+          r["english name"] || r["English name"] || r["english"] || "";
+        const imageUrl = r["image"] || r["Image"] || "";
+        const priceRaw =
+          r["krw-to-pkr"] || r["PKR"] || r["pkr"] || r["price"] || "";
+
+        // Skip empty rows
+        if (!koreanName && !englishName) return;
+
+        const priceNum = Number(priceRaw);
+        const priceDisplay =
+          !isNaN(priceNum) && priceNum > 0
+            ? "PKR " + priceNum.toLocaleString("en-PK")
+            : "";
+
+        const product = {
+          brand,
+          koreanName,
+          englishName,
+          imageUrl,
+          priceDisplay,
+        };
+
+        if (!byCategory.has(category)) {
+          byCategory.set(category, []);
+        }
+        byCategory.get(category).push(product);
+      });
+
+      // Render each category section in the order it appears in the sheet
+      for (const [category, products] of byCategory.entries()) {
+        const section = document.createElement("section");
+        section.className = "category-section";
+
+        const titleEl = document.createElement("h2");
+        titleEl.className = "category-title";
+        titleEl.textContent = category;
+        section.appendChild(titleEl);
+
+        const grid = document.createElement("div");
+        grid.className = "product-grid";
+
+        products.forEach((p) => {
+          const card = document.createElement("article");
+          card.className = "product-card";
+
+          card.innerHTML = `
+            <div class="image-wrapper">
+              ${
+                p.imageUrl
+                  ? `<img src="${p.imageUrl}" alt="${p.englishName || p.koreanName}" loading="lazy" />`
+                  : ""
+              }
+            </div>
+            <div class="product-meta">
+              <div class="brand-line">${p.brand}</div>
+              <div class="name-ko">${p.koreanName}</div>
+              <div class="name-en">${p.englishName ? `(${p.englishName})` : ""}</div>
+              <div class="price">${p.priceDisplay}</div>
+            </div>
+          `;
+
+          grid.appendChild(card);
+          totalCount++;
+        });
+
+        section.appendChild(grid);
+        containerEl.appendChild(section);
+      }
+
+      statusEl.textContent = totalCount
+        ? `Loaded ${totalCount} products in ${byCategory.size} categories.`
+        : "No products found in this sheet.";
+    }
+
+    (async function init() {
+      const rows = await loadSheetData();
+      renderProducts(rows);
+    })();
+  </script>
+</body>
+</html>
+
